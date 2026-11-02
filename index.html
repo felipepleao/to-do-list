@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html lang="pt-BR" class="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DailyFlow · Checklist Diário Inteligente</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  tailwind.config = {
+    darkMode: 'class',
+    theme: {
+      extend: {
+        colors: {
+          bg: '#0B0B0F',
+          surface: '#14141B',
+          surface2: '#1E1E28',
+          surface3: '#282836',
+          divider: '#2B2B3A',
+          textMain: '#F5F5FA',
+          textDim: '#9A9AB0',
+          accent: '#A970FF',
+          accentDim: '#8B5CF6',
+          success: '#10B981',
+          warning: '#F59E0B'
+        },
+        fontFamily: {
+          display: ['Oswald', 'sans-serif'],
+          body: ['Inter', 'sans-serif'],
+          mono: ['JetBrains Mono', 'monospace']
+        }
+      }
+    }
+  }
+</script>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body {
+    background-color: #0B0B0F;
+    color: #F5F5FA;
+    font-family: 'Inter', sans-serif;
+    -webkit-font-smoothing: antialiased;
+    overflow-x: hidden;
+  }
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: #0B0B0F; }
+  ::-webkit-scrollbar-thumb { background: #2B2B3A; border-radius: 9999px; }
+  .glow-accent { box-shadow: 0 0 25px rgba(169, 112, 255, 0.15); }
+</style>
+</head>
+<body class="min-h-screen py-6 px-3 sm:px-6 pb-24 selection:bg-accent selection:text-bg">
+
+<div class="max-w-2xl mx-auto">
+
+  <!-- Header -->
+  <header class="flex items-center justify-between gap-4 mb-6 pb-4 border-b border-divider">
+    <div class="flex items-center gap-3">
+      <div class="w-10 h-10 rounded-2xl bg-accent flex items-center justify-center text-bg font-bold shadow-lg">
+        <svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <path d="M9 11l3 3L22 4"/>
+          <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
+        </svg>
+      </div>
+      <div>
+        <h1 class="font-display text-2xl sm:text-3xl font-bold uppercase tracking-wide leading-none">
+          DailyFlow
+        </h1>
+        <p class="text-xs text-textDim mt-0.5">Checklist Diário · Hábitos & Produtividade</p>
+      </div>
+    </div>
+
+    <!-- Overall Day Progress Pill -->
+    <div class="bg-surface border border-divider rounded-2xl px-3.5 py-2 flex flex-col items-end shrink-0">
+      <span class="text-[10px] uppercase tracking-wider text-textDim font-semibold">Progresso Hoje</span>
+      <div class="flex items-baseline gap-1">
+        <span id="dayPctText" class="font-display text-xl font-bold text-accent">0%</span>
+        <span id="dayCountText" class="text-[11px] text-textDim font-mono">(0/0)</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- Week Navigation Tabs (Auto-selects current day) -->
+  <nav id="weekNav" class="grid grid-cols-7 gap-1 mb-6 bg-surface p-1.5 rounded-2xl border border-divider"></nav>
+
+  <!-- Active Day Header & Actions -->
+  <div class="bg-surface border border-divider rounded-3xl p-5 sm:p-6 mb-5 glow-accent">
+    <div class="flex items-center justify-between mb-4 pb-3 border-b border-divider">
+      <div>
+        <h2 id="currentDayTitle" class="font-display text-xl uppercase tracking-wide font-semibold text-textMain">Segunda-feira</h2>
+        <p id="currentDaySubtitle" class="text-xs text-textDim mt-0.5">Rotina de foco e alta performance</p>
+      </div>
+      <div class="flex items-center gap-2">
+        <button id="addCustomTaskBtn" class="px-3 py-1.5 rounded-xl bg-surface2 hover:bg-surface3 border border-divider text-xs font-semibold text-textMain transition flex items-center gap-1">
+          <svg class="w-3.5 h-3.5 text-accent" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+          <span>Nova Tarefa</span>
+        </button>
+        <button id="resetDayBtn" class="p-2 rounded-xl bg-surface2 hover:bg-surface3 border border-divider text-textDim hover:text-textMain transition" title="Zerar dia atual">
+          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <!-- Task List for Selected Day -->
+    <ul id="taskList" class="flex flex-col gap-2.5"></ul>
+  </div>
+
+  <!-- Custom Task Input Drawer (Hidden by default) -->
+  <div id="taskModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 hidden items-center justify-center p-4">
+    <div class="bg-surface border border-divider rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-4">
+      <div class="flex items-center justify-between border-b border-divider pb-3">
+        <h3 class="font-display text-lg uppercase font-semibold text-textMain">Adicionar Tarefa ao Dia</h3>
+        <button id="closeModalBtn" class="p-1.5 rounded-xl bg-surface2 text-textDim hover:text-textMain">
+          <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+        </button>
+      </div>
+      <form id="taskForm" class="space-y-3">
+        <div>
+          <label class="block text-xs text-textDim font-medium mb-1">Título da Tarefa</label>
+          <input id="newTaskTitle" type="text" required placeholder="Ex: Ler 20 páginas de um livro" class="w-full bg-bg border border-divider rounded-xl px-3.5 py-2.5 text-sm text-textMain focus:outline-none focus:border-accent">
+        </div>
+        <div>
+          <label class="block text-xs text-textDim font-medium mb-1">Categoria</label>
+          <select id="newTaskCategory" class="w-full bg-bg border border-divider rounded-xl px-3.5 py-2.5 text-sm text-textMain focus:outline-none focus:border-accent">
+            <option value="Trabalho">💻 Trabalho / Estudo</option>
+            <option value="Saúde">💪 Saúde & Corpo</option>
+            <option value="Rotina">✨ Rotina Pessoal</option>
+          </select>
+        </div>
+        <div class="flex justify-end gap-2 pt-2">
+          <button type="submit" class="w-full py-2.5 rounded-xl bg-accent hover:bg-accentDim text-bg font-display uppercase font-bold tracking-wider text-sm transition">
+            Adicionar à Rotina
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+</div>
+
+<script>
+/* ==========================================================================
+   DEFAULT CHECKLIST TEMPLATES PER WEEKDAY (0 = Domingo, 1 = Segunda, ...)
+   ========================================================================== */
+const DEFAULT_WEEKLY_CHECKLIST = [
+  // Domingo
+  [
+    { id: 'sun_1', text: 'Descanso e recuperação total', category: 'Saúde', completed: false },
+    { id: 'sun_2', text: 'Planejar a semana seguinte (metas e prioridades)', category: 'Trabalho', completed: false },
+    { id: 'sun_3', text: 'Organizar e limpar o ambiente de trabalho/casa', category: 'Rotina', completed: false },
+    { id: 'sun_4', text: 'Dormir cedo (8h de sono)', category: 'Saúde', completed: false }
+  ],
+  // Segunda
+  [
+    { id: 'mon_1', text: 'Acordar no horário programado e beber 500ml de água', category: 'Saúde', completed: false },
+    { id: 'mon_2', text: 'Treino da academia (Treino A)', category: 'Saúde', completed: false },
+    { id: 'mon_3', text: 'Revisar tarefas mais importantes da semana', category: 'Trabalho', completed: false },
+    { id: 'mon_4', text: 'Sessão de Foco Pomodoro (mínimo 3 ciclos)', category: 'Trabalho', completed: false },
+    { id: 'mon_5', text: 'Leitura de 15 minutos antes de dormir', category: 'Rotina', completed: false }
+  ],
+  // Terça
+  [
+    { id: 'tue_1', text: 'Acordar cedo e hidratação matinal', category: 'Saúde', completed: false },
+    { id: 'tue_2', text: 'Treino da academia (Treino B)', category: 'Saúde', completed: false },
+    { id: 'tue_3', text: 'Executar projeto principal do dia', category: 'Trabalho', completed: false },
+    { id: 'tue_4', text: 'Estudo ou leitura técnica (30 min)', category: 'Trabalho', completed: false },
+    { id: 'tue_5', text: 'Caminhada ou cardio leve', category: 'Saúde', completed: false }
+  ],
+  // Quarta
+  [
+    { id: 'wed_1', text: 'Manhã de alta produtividade', category: 'Trabalho', completed: false },
+    { id: 'wed_2', text: 'Treino Híbrido (Pernas, flexão e abdômen)', category: 'Saúde', completed: false },
+    { id: 'wed_3', text: 'Revisão parcial dos objetivos da semana', category: 'Trabalho', completed: false },
+    { id: 'wed_4', text: 'Momento de lazer ou hobby', category: 'Rotina', completed: false }
+  ],
+  // Quinta
+  [
+    { id: 'thu_1', text: 'Rotina matinal e café saudável', category: 'Saúde', completed: false },
+    { id: 'thu_2', text: 'Treino da academia (Treino A)', category: 'Saúde', completed: false },
+    { id: 'thu_3', text: 'Concluir pendências importantes', category: 'Trabalho', completed: false },
+    { id: 'thu_4', text: 'Organizar caixa de entrada de e-mails/mensagens', category: 'Trabalho', completed: false }
+  ],
+  // Sexta
+  [
+    { id: 'fri_1', text: 'Manter foco total nas entregas finais da semana', category: 'Trabalho', completed: false },
+    { id: 'fri_2', text: 'Treino da academia (Treino B)', category: 'Saúde', completed: false },
+    { id: 'fri_3', text: 'Balanço semanal de produtividade', category: 'Trabalho', completed: false },
+    { id: 'fri_4', text: 'Noite de descanso social ou familiar', category: 'Rotina', completed: false }
+  ],
+  // Sábado
+  [
+    { id: 'sat_1', text: 'Acordar sem despertador e café com calma', category: 'Rotina', completed: false },
+    { id: 'sat_2', text: 'Treino Híbrido em casa / Academia', category: 'Saúde', completed: false },
+    { id: 'sat_3', text: 'Tarefas domésticas pendentes', category: 'Rotina', completed: false },
+    { id: 'sat_4', text: 'Lazer ou passeio ao ar livre', category: 'Rotina', completed: false }
+  ]
+];
+
+const WEEKDAY_NAMES = [
+  { short: 'Dom', full: 'Domingo' },
+  { short: 'Seg', full: 'Segunda-feira' },
+  { short: 'Ter', full: 'Terça-feira' },
+  { short: 'Qua', full: 'Quarta-feira' },
+  { short: 'Qui', full: 'Quinta-feira' },
+  { short: 'Sex', full: 'Sexta-feira' },
+  { short: 'Sáb', full: 'Sábado' }
+];
+
+/* ==========================================================================
+   STATE & PERSISTENCE (`localStorage`)
+   ========================================================================== */
+const STORAGE_KEY = "dailyflow_checklist_v1";
+
+function loadChecklistState() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(STORAGE_KEY) || "null");
+    if (Array.isArray(raw) && raw.length === 7) {
+      return raw;
+    }
+  } catch (e) {}
+  // Deep clone default templates if nothing in cache
+  return JSON.parse(JSON.stringify(DEFAULT_WEEKLY_CHECKLIST));
+}
+
+let checklistState = loadChecklistState();
+
+// Determine today's weekday index (0 = Domingo, 1 = Segunda, ...)
+const todayIndex = new Date().getDay();
+let activeDayIndex = todayIndex;
+
+function saveChecklistState() {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(checklistState));
+  } catch (e) {}
+}
+
+/* ==========================================================================
+   UI RENDERING
+   ========================================================================== */
+const weekNav = document.getElementById('weekNav');
+const currentDayTitle = document.getElementById('currentDayTitle');
+const currentDaySubtitle = document.getElementById('currentDaySubtitle');
+const taskList = document.getElementById('taskList');
+const dayPctText = document.getElementById('dayPctText');
+const dayCountText = document.getElementById('dayCountText');
+
+function renderNav() {
+  weekNav.innerHTML = '';
+  WEEKDAY_NAMES.forEach((dayObj, i) => {
+    const isActive = i === activeDayIndex;
+    const isToday = i === todayIndex;
+    const dayTasks = checklistState[i] || [];
+    const completedCount = dayTasks.filter(t => t.completed).length;
+    const totalCount = dayTasks.length;
+    const isAllDone = totalCount > 0 && completedCount === totalCount;
+
+    const btn = document.createElement('button');
+    btn.className = `py-2.5 px-1 rounded-xl flex flex-col items-center gap-1 transition ${
+      isActive
+        ? 'bg-surface2 text-accent border border-accent/40 font-bold shadow'
+        : 'text-textDim hover:text-textMain bg-bg/50 border border-divider/60'
+    }`;
+
+    btn.innerHTML = `
+      <span class="text-xs uppercase tracking-wide">${dayObj.short}</span>
+      <div class="flex items-center gap-1">
+        <span class="text-[11px] font-mono">${completedCount}/${totalCount}</span>
+        ${isAllDone ? `<span class="w-1.5 h-1.5 rounded-full bg-success"></span>` : isToday ? `<span class="w-1.5 h-1.5 rounded-full bg-accent animate-pulse"></span>` : ''}
+      </div>
+    `;
+
+    btn.addEventListener('click', () => {
+      activeDayIndex = i;
+      render();
+    });
+    weekNav.appendChild(btn);
+  });
+}
+
+function renderPanel() {
+  const dayMeta = WEEKDAY_NAMES[activeDayIndex];
+  currentDayTitle.textContent = dayMeta.full;
+  currentDaySubtitle.textContent = activeDayIndex === todayIndex ? "Rotina de hoje (Automático)" : "Visualizando planejamento do dia";
+
+  const tasks = checklistState[activeDayIndex] || [];
+  const completedCount = tasks.filter(t => t.completed).length;
+  const totalCount = tasks.length;
+  const pct = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
+
+  dayPctText.textContent = `${pct}%`;
+  dayCountText.textContent = `(${completedCount}/${totalCount})`;
+
+  taskList.innerHTML = '';
+  if (tasks.length === 0) {
+    taskList.innerHTML = `<li class="text-xs text-textDim text-center py-8 border border-dashed border-divider rounded-2xl">Nenhuma tarefa cadastrada para este dia. Adicione acima!</li>`;
+    return;
+  }
+
+  tasks.forEach((task, idx) => {
+    const li = document.createElement('li');
+    li.className = `group flex items-center justify-between gap-3 p-3.5 rounded-2xl border transition cursor-pointer ${
+      task.completed ? 'bg-bg border-divider/50 opacity-60' : 'bg-surface2 border-divider hover:border-accent/40'
+    }`;
+
+    const catColor = task.category === 'Saúde' ? 'text-success bg-success/10' : task.category === 'Trabalho' ? 'text-accent bg-accent/10' : 'text-warning bg-warning/10';
+
+    li.innerHTML = `
+      <div class="flex items-center gap-3.5 min-w-0 flex-1">
+        <button type="button" class="w-6 h-6 rounded-xl border flex items-center justify-center shrink-0 transition ${
+          task.completed ? 'bg-success border-success text-bg' : 'border-textDim hover:border-white bg-bg'
+        }">
+          ${task.completed ? `<svg class="w-4 h-4" viewBox="0 0 16 16" fill="none"><path d="M3 8.5L6.2 12L13 4" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>` : ''}
+        </button>
+        <div class="min-w-0 flex-1">
+          <span class="text-xs sm:text-sm font-medium block truncate ${task.completed ? 'line-through text-textDim' : 'text-textMain'}">
+            ${task.text}
+          </span>
+          <span class="inline-block mt-0.5 text-[10px] font-semibold px-2 py-0.5 rounded-md ${catColor}">
+            ${task.category}
+          </span>
+        </div>
+      </div>
+      <button type="button" class="delete-task-btn p-1.5 rounded-xl text-textDim hover:text-red-400 opacity-60 group-hover:opacity-100 transition" title="Excluir tarefa">
+        <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+      </button>
+    `;
+
+    li.addEventListener('click', () => {
+      task.completed = !task.completed;
+      saveChecklistState();
+      render();
+    });
+
+    li.querySelector('.delete-task-btn').addEventListener('click', (e) => {
+      e.stopPropagation();
+      checklistState[activeDayIndex].splice(idx, 1);
+      saveChecklistState();
+      render();
+    });
+
+    taskList.appendChild(li);
+  });
+}
+
+function render() {
+  renderNav();
+  renderPanel();
+}
+
+/* ==========================================================================
+   EVENT LISTENERS & MODAL CONTROLS
+   ========================================================================== */
+const taskModal = document.getElementById('taskModal');
+document.getElementById('addCustomTaskBtn').addEventListener('click', () => {
+  taskModal.classList.remove('hidden');
+  taskModal.classList.add('flex');
+  document.getElementById('newTaskTitle').focus();
+});
+document.getElementById('closeModalBtn').addEventListener('click', () => {
+  taskModal.classList.add('hidden');
+  taskModal.classList.remove('flex');
+});
+
+document.getElementById('taskForm').addEventListener('submit', (e) => {
+  e.preventDefault();
+  const title = document.getElementById('newTaskTitle').value.trim();
+  const category = document.getElementById('newTaskCategory').value;
+  if (!title) return;
+
+  const newTask = {
+    id: 'custom_' + Date.now(),
+    text: title,
+    category,
+    completed: false
+  };
+
+  checklistState[activeDayIndex].push(newTask);
+  saveChecklistState();
+  document.getElementById('newTaskTitle').value = '';
+  taskModal.classList.add('hidden');
+  taskModal.classList.remove('flex');
+  render();
+});
+
+document.getElementById('resetDayBtn').addEventListener('click', () => {
+  if (confirm(`Deseja desmarcar todas as tarefas de ${WEEKDAY_NAMES[activeDayIndex].full}?`)) {
+    checklistState[activeDayIndex].forEach(t => t.completed = false);
+    saveChecklistState();
+    render();
+  }
+});
+
+// Initial startup render
+render();
+</script>
+</body>
+</html>
