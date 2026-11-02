@@ -151,6 +151,7 @@
     .tag { padding:4px 7px; font-size:10px; font-weight:650; border-radius:6px; color:var(--purple); background:rgba(171,131,255,.1); }
     .tag.health { color:var(--green); background:rgba(92,223,181,.09); }
     .tag.personal { color:var(--gold); background:rgba(239,193,123,.09); }
+    .tag.carried { color:var(--gold); background:rgba(239,193,123,.09); border:1px solid rgba(239,193,123,.18); }
     .task-time { color:var(--dim); font-size:10px; }
     .task-tools { display:flex; gap:1px; }
     .task-tools .icon-button { width:31px; height:31px; }
@@ -244,7 +245,7 @@
             <div class="stat"><small>Dias planejados</small><strong id="monthDays">0</strong></div>
             <div class="stat"><small>Progresso</small><strong id="monthPct">0%</strong></div>
           </div>
-          <p class="summary-foot">Cada data tem seu próprio checklist. As tarefas permanecem salvas ao navegar entre meses e dias.</p>
+          <p class="summary-foot">Tarefas não concluídas de dias anteriores passam automaticamente para hoje. As concluídas permanecem na data em que foram finalizadas.</p>
         </section>
       </aside>
 
@@ -312,8 +313,8 @@
 
   <script>
     'use strict';
-    // Armazenamento v2: propositalmente não importa as tarefas do modelo semanal anterior.
-    // Isso faz a nova instalação abrir sem tarefas de exemplo ou marcações antigas.
+    // Mantém a chave v2 para preservar todas as tarefas existentes, sem migração destrutiva.
+    // O modelo semanal v1 continua separado e não é importado automaticamente.
     const STORAGE_KEY = 'dailyflow_calendar_v2';
     const CATEGORIES = ['Trabalho', 'Saúde', 'Pessoal'];
     const locale = 'pt-BR';
@@ -334,12 +335,15 @@
       const tasksByDate = Object.create(null);
       for (const [key,list] of Object.entries(value.tasksByDate)) {
         if (!isDateKey(key) || !Array.isArray(list)) continue;
-        const clean = list.slice(0,2000).filter(task => task && typeof task.text === 'string' && task.text.trim()).map(task => ({
+        // Não limita a leitura a 2.000: tarefas acumuladas de vários dias jamais devem
+        // desaparecer silenciosamente após o próximo reload.
+        const clean = list.filter(task => task && typeof task.text === 'string' && task.text.trim()).map(task => ({
           id: typeof task.id === 'string' && task.id.length < 150 ? task.id : newId(),
           text: task.text.trim().slice(0,180),
           category: CATEGORIES.includes(task.category) ? task.category : 'Pessoal',
           time: typeof task.time === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(task.time) ? task.time : '',
-          completed: task.completed === true
+          completed: task.completed === true,
+          originDate: typeof task.originDate === 'string' && isDateKey(task.originDate) && task.originDate <= key ? task.originDate : key
         }));
         if (clean.length) tasksByDate[key] = clean;
       }
@@ -368,6 +372,44 @@
     function tasksFor(key) { return state.tasksByDate[key] || []; }
     function currentKey() { return localKey(selectedDate); }
     function updateTasksFor(key,tasks) { if (tasks.length) state.tasksByDate[key] = tasks; else delete state.tasksByDate[key]; saveState(); render(); }
+    // Carry-forward: MOVE (não duplica) apenas tarefas pendentes anteriores ao dia atual.
+    // Preserva originDate para identificar a data inicial e mantém tarefas concluídas
+    // no dia em que foram concluídas. Datas futuras nunca são antecipadas.
+    function carryForwardPending(todayKey = localKey(new Date())) {
+      const migrated = [];
+      for (const [dateKey, tasks] of Object.entries(state.tasksByDate)) {
+        if (dateKey >= todayKey) continue;
+        const remaining = [];
+        for (const task of tasks) {
+          if (task.completed) remaining.push(task);
+          else {
+            if (!task.originDate || !isDateKey(task.originDate)) task.originDate = dateKey;
+            migrated.push(task);
+          }
+        }
+        if (remaining.length) state.tasksByDate[dateKey] = remaining;
+        else delete state.tasksByDate[dateKey];
+      }
+      if (!migrated.length) return 0;
+      state.tasksByDate[todayKey] = [...tasksFor(todayKey), ...migrated];
+      saveState();
+      return migrated.length;
+    }
+    let lastKnownToday = localKey(new Date());
+    // Também verifica mudança de dia com a aba aberta/suspensa ou ao retornar ao app.
+    function checkDayTransition() {
+      const newToday = localKey(new Date());
+      if (newToday === lastKnownToday) return;
+      const wasLookingAtToday = currentKey() === lastKnownToday;
+      lastKnownToday = newToday;
+      carryForwardPending(newToday);
+      if (wasLookingAtToday) {
+        $('completedSection').open = false;
+        selectedDate = fromKey(newToday);
+        visibleMonth = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), 1, 12);
+      }
+      render();
+    }
     function formatDate(date,opts) { return new Intl.DateTimeFormat(locale,opts).format(date); }
     function firstUpper(text) { return text.charAt(0).toUpperCase() + text.slice(1); }
     function navigateDay(delta) { $('completedSection').open=false; selectedDate = addDays(selectedDate,delta); visibleMonth = new Date(selectedDate.getFullYear(),selectedDate.getMonth(),1,12); render(); }
@@ -418,11 +460,21 @@
       const tick=document.createElement('button'); tick.type='button'; tick.className='check-button'+(task.completed?' checked':'');
       tick.setAttribute('aria-label',task.completed?`Reabrir ${task.text}`:`Concluir ${task.text}`);
       tick.setAttribute('aria-pressed',String(task.completed)); if (task.completed) tick.innerHTML=icons.check;
-      tick.addEventListener('click',()=>{task.completed=!task.completed; saveState(); render();});
+      tick.addEventListener('click',()=>{
+        task.completed=!task.completed;
+        // Ao reabrir uma tarefa histórica, ela volta a ser pendente e segue para hoje.
+        saveState(); carryForwardPending(); render();
+      });
       const info=document.createElement('div'); info.className='task-main';
       const title=document.createElement('div'); title.className='task-title'; title.textContent=task.text; info.appendChild(title);
       const meta=document.createElement('div'); meta.className='task-meta'; meta.appendChild(metaTag(task));
       if (task.time) { const time=document.createElement('span'); time.className='task-time'; time.textContent=task.time; meta.appendChild(time); }
+      if (task.originDate && task.originDate < dateKey) {
+        const origin = document.createElement('span'); origin.className = 'tag carried';
+        origin.textContent = `Adiada de ${formatDate(fromKey(task.originDate),{day:'2-digit',month:'2-digit'})}`;
+        origin.title = `Data original: ${formatDate(fromKey(task.originDate),{day:'2-digit',month:'long',year:'numeric'})}`;
+        meta.appendChild(origin);
+      }
       info.appendChild(meta);
       const tools=document.createElement('div'); tools.className='task-tools';
       tools.appendChild(makeToolButton(icons.pencil,`Editar ${task.text}`,'',()=>openEdit(task.id)));
@@ -434,7 +486,8 @@
       const today=localKey(new Date()), tomorrow=localKey(addDays(new Date(),1));
       $('relativeDay').textContent=dateKey===today?'Hoje':dateKey===tomorrow?'Amanhã':'Planejamento diário';
       $('selectedDateTitle').textContent=firstUpper(formatDate(selectedDate,{weekday:'long',day:'numeric',month:'long'}));
-      $('dateSubtitle').textContent=`${formatDate(selectedDate,{year:'numeric'})} · ${total?`${total} tarefa${total!==1?'s':''} cadastrada${total!==1?'s':''}`:'Nenhuma tarefa cadastrada'}`;
+      const carried = tasks.filter(t => !t.completed && t.originDate && t.originDate < dateKey).length;
+      $('dateSubtitle').textContent=`${formatDate(selectedDate,{year:'numeric'})} · ${total?`${total} tarefa${total!==1?'s':''} cadastrada${total!==1?'s':''}`:'Nenhuma tarefa cadastrada'}${carried ? ` · ${carried} pendente${carried!==1?'s':''} de dias anteriores` : ''}`;
       $('completeAllBtn').disabled=!pending;
       $('clearAllBtn').disabled=!total;
       const pct=total?Math.round(done/total*100):0;
@@ -464,7 +517,12 @@
       event.preventDefault(); const text=$('taskText').value.trim(); if(!text) return;
       const key=currentKey(); const tasks=tasksFor(key);
       if (tasks.length>=2000) {alert('Limite de 2.000 tarefas por dia atingido.');return;}
-      updateTasksFor(key,[...tasks,{id:newId(),text:text.slice(0,180),category:$('taskCategory').value,time:$('taskTime').value||'',completed:false}]);
+      updateTasksFor(key,[...tasks,{id:newId(),text:text.slice(0,180),category:$('taskCategory').value,time:$('taskTime').value||'',completed:false,originDate:key}]);
+      // Se a data escolhida já passou, a nova tarefa aparece no checklist de hoje.
+      if (key < localKey(new Date())) {
+        carryForwardPending();
+        selectDate(new Date());
+      }
       $('taskText').value=''; $('taskTime').value=''; $('taskText').focus();
     });
     $('completeAllBtn').addEventListener('click',()=>{ const tasks=tasksFor(currentKey()); if(!tasks.length) return; tasks.forEach(t=>t.completed=true); saveState(); render(); });
@@ -501,9 +559,19 @@
         if(parsed?.app!=='DailyFlow'||parsed?.version!==2||!parsed?.tasksByDate||typeof parsed.tasksByDate!=='object'||Array.isArray(parsed.tasksByDate)) throw new Error('Arquivo não é um backup DailyFlow v2 válido.');
         const next=normalizeState(parsed);
         if(!confirm('Importar o backup substituirá TODAS as tarefas atualmente salvas neste navegador. Continuar?'))return;
-        state=next;$('completedSection').open=false;saveState();render();
-        alert('Backup importado.');
+        state=next;$('completedSection').open=false;saveState();
+        const migrated = carryForwardPending(); render();
+        alert(migrated ? `Backup importado. ${migrated} tarefa(s) pendente(s) anterior(es) movida(s) para hoje.` : 'Backup importado.');
       }catch(error){alert(`Não foi possível importar: ${error.message}`);}
+    });
+    // Migração inicial: funciona também para tarefas criadas na versão 2 existente.
+    carryForwardPending();
+    setInterval(checkDayTransition, 60_000);
+    window.addEventListener('focus', checkDayTransition);
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) checkDayTransition(); });
+    window.addEventListener('storage', event => {
+      if (event.key !== STORAGE_KEY) return;
+      state = loadState(); carryForwardPending(); render();
     });
     if('serviceWorker' in navigator && (location.protocol==='https:'||location.hostname==='localhost'||location.hostname==='127.0.0.1')) {
       window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js').catch(()=>{}));
